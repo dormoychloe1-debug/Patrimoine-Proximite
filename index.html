@@ -267,15 +267,28 @@
 <script>
   const DATASET = 'liste-des-immeubles-proteges-au-titre-des-monuments-historiques';
   const EXPLORE_BASE = 'https://culture.data.gouv.fr/api/explore/v2.1';
-  const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-  function proxied(url){ return CORS_PROXY + encodeURIComponent(url); }
+  const CORS_PROXIES = [
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  ];
+  async function fetchJSON(url){
+    let lastErr;
+    for (const makeProxyUrl of CORS_PROXIES){
+      try{
+        const res = await fetch(makeProxyUrl(url));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return await res.json();
+      }catch(e){ lastErr = e; }
+    }
+    throw lastErr || new Error('Tous les relais ont échoué');
+  }
 
   let cachedGeoField = undefined; // undefined = not checked yet, null = not found
   async function getGeoField(){
     if (cachedGeoField !== undefined) return cachedGeoField;
     try{
-      const res = await fetch(proxied(`${EXPLORE_BASE}/catalog/datasets/${DATASET}`));
-      const data = await res.json();
+      const data = await fetchJSON(`${EXPLORE_BASE}/catalog/datasets/${DATASET}`);
       const fields = data.fields || (data.dataset && data.dataset.fields) || [];
       const geo = fields.find(f => f.type === 'geo_point_2d' || f.type === 'geo_shape');
       cachedGeoField = geo ? geo.name : null;
@@ -480,9 +493,7 @@
     }
 
     try{
-      const res = await fetch(proxied(url));
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
+      const data = await fetchJSON(url);
       const records = data.results || [];
       renderResults(records, lat, lon, geoField);
       const count = document.getElementById('resultsList').querySelectorAll('.plaque').length;
