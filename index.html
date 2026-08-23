@@ -1,4 +1,4 @@
-  <!doctype html>
+<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -266,7 +266,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
   const DATASET = 'liste-des-immeubles-proteges-au-titre-des-monuments-historiques';
-  const EXPLORE_BASE = 'https://data.culture.gouv.fr/api/explore/v2.1';
+  const EXPLORE_BASE = 'https://culture.data.gouv.fr/api/explore/v2.1';
 
   let cachedGeoField = undefined; // undefined = not checked yet, null = not found
   async function getGeoField(){
@@ -489,7 +489,7 @@
       list.innerHTML = `<div class="error-box">
         Impossible de contacter la base Mérimée pour le moment (${escapeHtml(err.message || 'erreur réseau')}).<br>
         Consultez les données directement sur
-        <a href="https://data.culture.gouv.fr/explore/dataset/${DATASET}/" target="_blank" rel="noopener">data.culture.gouv.fr</a>.
+        <a href="https://culture.data.gouv.fr/explore/dataset/${DATASET}/" target="_blank" rel="noopener">culture.data.gouv.fr</a>.
       </div>`;
       setStatus("Erreur de connexion à l'API", 'error');
     }
