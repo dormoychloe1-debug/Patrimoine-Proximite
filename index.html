@@ -1,4 +1,4 @@
-<!doctype html>
+  <!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -384,8 +384,8 @@
     // Trie par distance croissante (utile si le filtre géo n'a pas pu être appliqué côté serveur)
     records = records
       .map(r => ({ r, m: extractMonument(r, lat, lon, geoField) }))
-      .sort((a,b) => (a.m.dist ?? Infinity) - (b.m.dist ?? Infinity))
-      .filter(x => x.m.dist == null || x.m.dist <= radius)
+      .filter(x => x.m.dist != null && x.m.dist <= radius)
+      .sort((a,b) => a.m.dist - b.m.dist)
       .map(x => x.r);
 
     if (!records.length){
@@ -470,7 +470,7 @@
     const radiusKm = Math.max(1, Math.round(radius/1000));
     let url;
     if (geoField){
-      const whereClause = `distance(${geoField}, geom'POINT(${lon} ${lat})', ${radiusKm}km)`;
+      const whereClause = `within_distance(${geoField}, geom'POINT(${lon} ${lat})', ${radiusKm}km)`;
       url = `${EXPLORE_BASE}/catalog/datasets/${DATASET}/records?where=${encodeURIComponent(whereClause)}&limit=100`;
     } else {
       // Filtre géo indisponible : on récupère un lot et on filtre/trie côté client
