@@ -266,7 +266,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
   const DATASET = 'liste-des-immeubles-proteges-au-titre-des-monuments-historiques';
-  const API_BASE = 'https://data.culture.gouv.fr/api/records/1.0/search/';
+  const EXPLORE_BASE = 'https://data.culture.gouv.fr/api/explore/v2.1';
+
+  let cachedGeoField = undefined; // undefined = not checked yet, null = not found
+  async function getGeoField(){
+    if (cachedGeoField !== undefined) return cachedGeoField;
+    try{
+      const res = await fetch(`${EXPLORE_BASE}/catalog/datasets/${DATASET}`);
+      const data = await res.json();
+      const fields = data.fields || (data.dataset && data.dataset.fields) || [];
+      const geo = fields.find(f => f.type === 'geo_point_2d' || f.type === 'geo_shape');
+      cachedGeoField = geo ? geo.name : null;
+    }catch(e){ cachedGeoField = null; }
+    return cachedGeoField;
+  }
 
   let radius = 1000;
   let map, userMarker, monumentLayer;
@@ -328,9 +341,21 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  function extractMonument(r, lat, lon){
-    const f = r.fields || {};
-    const coords = r.geometry ? r.geometry.coordinates : null; // [lon, lat]
+  function resolveCoords(f, geoField){
+    const candidates = geoField ? [geoField, 'geolocalisation','coordonnees','geo_point_2d','coordonnees_ban'] : ['geolocalisation','coordonnees','geo_point_2d','coordonnees_ban'];
+    for (const key of candidates){
+      const g = f[key];
+      if (!g) continue;
+      if (Array.isArray(g.coordinates)) return g.coordinates; // GeoJSON [lon, lat]
+      if (typeof g.lon === 'number' && typeof g.lat === 'number') return [g.lon, g.lat];
+      if (Array.isArray(g) && g.length === 2) return [g[1], g[0]]; // [lat, lon] -> [lon, lat]
+    }
+    return null;
+  }
+
+  function extractMonument(r, lat, lon, geoField){
+    const f = r || {}; // v2.1 records are flat objects, no .fields wrapper
+    const coords = resolveCoords(f, geoField);
     const name = pick(f, ['titre_editorial_de_la_notice','denomination_de_l_edifice','tico'], 'Édifice protégé');
     const commune = pick(f, ['commune_forme_editoriale','commune_forme_index','com'], '');
     const address = pick(f, ['adresse_forme_editoriale','adresse_forme_index','adrs'], '');
@@ -345,7 +370,7 @@
     return { name, commune, address, protection, century, architect, proprio, domaine, historique, ref, coords, dist };
   }
 
-  function renderResults(records, lat, lon){
+  function renderResults(records, lat, lon, geoField){
     const list = document.getElementById('resultsList');
     document.getElementById('resultsCount').textContent = records.length ? `${records.length} trouvé(s)` : '';
     monumentLayer.clearLayers();
@@ -356,9 +381,21 @@
       return;
     }
 
+    // Trie par distance croissante (utile si le filtre géo n'a pas pu être appliqué côté serveur)
+    records = records
+      .map(r => ({ r, m: extractMonument(r, lat, lon, geoField) }))
+      .sort((a,b) => (a.m.dist ?? Infinity) - (b.m.dist ?? Infinity))
+      .filter(x => x.m.dist == null || x.m.dist <= radius)
+      .map(x => x.r);
+
+    if (!records.length){
+      list.innerHTML = `<div class="empty">Aucun monument classé référencé dans ce rayon. Essayez un rayon plus large.</div>`;
+      return;
+    }
+
     list.innerHTML = '';
     records.forEach((r, idx)=>{
-      const m = extractMonument(r, lat, lon);
+      const m = extractMonument(r, lat, lon, geoField);
       currentRecords.push(m);
 
       if (m.coords){
@@ -429,17 +466,28 @@
     list.innerHTML = `<div class="loading">Interrogation de la base Mérimée…</div>`;
     setStatus(`Recherche dans un rayon de ${kmLabel(radius)}…`, 'live');
 
-    const url = `${API_BASE}?dataset=${DATASET}&geofilter.distance=${lat},${lon},${radius}&rows=50`;
+    const geoField = await getGeoField();
+    const radiusKm = Math.max(1, Math.round(radius/1000));
+    let url;
+    if (geoField){
+      const whereClause = `distance(${geoField}, geom'POINT(${lon} ${lat})', ${radiusKm}km)`;
+      url = `${EXPLORE_BASE}/catalog/datasets/${DATASET}/records?where=${encodeURIComponent(whereClause)}&limit=100`;
+    } else {
+      // Filtre géo indisponible : on récupère un lot et on filtre/trie côté client
+      url = `${EXPLORE_BASE}/catalog/datasets/${DATASET}/records?limit=100`;
+    }
+
     try{
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
-      const records = data.records || [];
-      renderResults(records, lat, lon);
-      setStatus(`${records.length} monument(s) dans ${kmLabel(radius)}`, 'live');
+      const records = data.results || [];
+      renderResults(records, lat, lon, geoField);
+      const count = document.getElementById('resultsList').querySelectorAll('.plaque').length;
+      setStatus(`${count} monument(s) dans ${kmLabel(radius)}`, 'live');
     }catch(err){
       list.innerHTML = `<div class="error-box">
-        Impossible de contacter la base Mérimée pour le moment.<br>
+        Impossible de contacter la base Mérimée pour le moment (${escapeHtml(err.message || 'erreur réseau')}).<br>
         Consultez les données directement sur
         <a href="https://data.culture.gouv.fr/explore/dataset/${DATASET}/" target="_blank" rel="noopener">data.culture.gouv.fr</a>.
       </div>`;
