@@ -267,12 +267,14 @@
 <script>
   const DATASET = 'liste-des-immeubles-proteges-au-titre-des-monuments-historiques';
   const EXPLORE_BASE = 'https://culture.data.gouv.fr/api/explore/v2.1';
+  const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+  function proxied(url){ return CORS_PROXY + encodeURIComponent(url); }
 
   let cachedGeoField = undefined; // undefined = not checked yet, null = not found
   async function getGeoField(){
     if (cachedGeoField !== undefined) return cachedGeoField;
     try{
-      const res = await fetch(`${EXPLORE_BASE}/catalog/datasets/${DATASET}`);
+      const res = await fetch(proxied(`${EXPLORE_BASE}/catalog/datasets/${DATASET}`));
       const data = await res.json();
       const fields = data.fields || (data.dataset && data.dataset.fields) || [];
       const geo = fields.find(f => f.type === 'geo_point_2d' || f.type === 'geo_shape');
@@ -478,7 +480,7 @@
     }
 
     try{
-      const res = await fetch(url);
+      const res = await fetch(proxied(url));
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       const records = data.results || [];
